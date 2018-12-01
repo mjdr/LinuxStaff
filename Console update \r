@@ -1,0 +1,2 @@
+printf("\r Some stuff %d", ...);
+fflush(stdout);
