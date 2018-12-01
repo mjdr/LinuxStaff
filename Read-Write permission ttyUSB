@@ -1,1 +1,1 @@
-sudo useradd -G jdr dialout
+sudo usermod -a -G dialout jdr
