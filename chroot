@@ -1,0 +1,32 @@
+#!/bin/bash
+
+echo Run chroot
+
+mount disk mnt
+
+TARGETDIR="mnt"
+mount -t proc proc $TARGETDIR/proc
+mount -t sysfs sysfs $TARGETDIR/sys
+mount -t devtmpfs devtmpfs $TARGETDIR/dev
+mount -t tmpfs tmpfs $TARGETDIR/dev/shm
+mount -t devpts devpts $TARGETDIR/dev/pts
+
+# Copy /etc/hosts
+/bin/cp -f /etc/hosts $TARGETDIR/etc/
+
+# Copy /etc/resolv.conf 
+/bin/cp -f /etc/resolv.conf $TARGETDIR/etc/resolv.conf
+
+# Link /etc/mtab
+chroot $TARGETDIR /bin/rm /etc/mtab 2> /dev/null 
+chroot $TARGETDIR /bin/ln -s /proc/mounts /etc/mtab
+
+chroot mnt
+
+umount mnt/proc
+umount mnt/sys
+umount mnt/dev/pts
+umount mnt/dev/shm
+umount mnt/dev
+umount mnt
+echo "Chroot Stoped"
