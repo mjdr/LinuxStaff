@@ -1,0 +1,36 @@
+##/boot/config.txt
+`
+framebuffer_depth=16
+`
+##/etc/X11/xorg.conf
+`
+Section "Monitor
+    Identifier "Monitor0"
+    Option "DPMS"
+EndSection
+
+Section "Screen"
+    Identifier "Screen0"
+    Device     "main"
+    Monitor    "Monitor0"
+    DefaultDepth 16
+    SubSection      "Display"
+                Depth   16
+                Virtual 1600 900
+                Modes   "1600x900"
+    EndSubSection
+EndSection
+
+Section "Device"
+        Identifier      "rpi"
+        Driver          "fbdev"
+        Option          "fbdev" "/dev/fb0"
+        Option          "ShadowFB" "off"
+EndSection
+
+Section "ServerLayout"
+        Identifier "default"
+        Screen 0 "Screen0" 0 0
+EndSection
+
+`
