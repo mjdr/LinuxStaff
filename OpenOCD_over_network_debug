@@ -1,0 +1,3 @@
+echo "bindto 0.0.0.0\ngdb_port 3333\n" > openocd.cfg
+
+openocd -f interface/stlink-v2.cfg -f target/stm32f1x.cfg -f openocd.cfg
