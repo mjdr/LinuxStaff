@@ -265,6 +265,124 @@ module_exit(bluepill_fb_exit);
 
 MODULE_LICENSE("GPL");
 
+// my_gpio.c
+
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/slab.h>
+#include <linux/usb.h>
+#include <linux/gpio/driver.h>
+
+struct bluepill_fb_gpio {
+	struct gpio_chip gpio;
+	struct usb_device* usb_dev;
+};
+
+
+static int gpio_in(struct gpio_chip *chip, unsigned offset) { return 0; }
+static int gpio_get(struct gpio_chip *chip, unsigned offset){ return 0; }
+static int gpio_out(struct gpio_chip *chip, unsigned offset, int value){ return 0; }
+static void gpio_set(struct gpio_chip *chip, unsigned offset, int value){
+
+	struct bluepill_fb_gpio* gpio = gpiochip_get_data(chip);
+	char bulk_buf;
+	int wrote_cnt;
+	int rv;
+	
+	
+	bulk_buf = value;
+	
+	rv = usb_bulk_msg(
+			gpio->usb_dev, 
+			usb_sndbulkpipe(gpio->usb_dev, 0x01),
+      &bulk_buf, 
+      1, 
+      &wrote_cnt, 
+  		5000
+ 	);
+ 	
+}
+
+static int bluepill_fb_probe(struct usb_interface *interface, const struct usb_device_id *id) {
+    struct usb_device* dev = interface_to_usbdev(interface);
+    struct bluepill_fb_gpio* gpio;
+    int rv;
+    
+    printk(KERN_INFO "bluepill_fb (%04X:%04X) plugged\n", id->idVendor, id->idProduct);
+    
+    gpio = kzalloc(sizeof(*gpio), GFP_KERNEL);
+    if (!gpio)
+			return -ENOMEM;
+    
+    gpio->gpio.label = "bluepill";
+    gpio->gpio.base = -1;
+    gpio->gpio.parent = &dev->dev;
+    gpio->gpio.owner = THIS_MODULE;
+    gpio->gpio.ngpio = 1;
+    gpio->gpio.get = gpio_get;
+    gpio->gpio.set = gpio_set;
+    gpio->gpio.direction_input = gpio_in;
+    gpio->gpio.direction_output = gpio_out;
+    gpio->gpio.can_sleep = false;
+    gpio->gpio.dbg_show = NULL;
+    
+    
+    gpio->usb_dev = dev;
+    
+		
+		rv = gpiochip_add_data(&gpio->gpio, gpio);
+    if (rv)
+			return rv;
+		
+		
+		usb_set_intfdata(interface, gpio);
+		return 0;
+}
+
+static void bluepill_fb_disconnect(struct usb_interface *interface) {
+		struct bluepill_fb_gpio* gpio = usb_get_intfdata(interface);
+		
+    printk(KERN_INFO "bluepill_fb  removed\n");
+    
+    gpiochip_remove(&gpio->gpio);
+		usb_set_intfdata(interface, NULL);
+		
+		//TODO:  
+    //kfree(gpio);
+}
+
+static struct usb_device_id bluepill_fb_table[] =
+{
+    { USB_DEVICE(0xdead, 0xbeaf) },
+    {} /* Terminating entry */
+};
+
+
+MODULE_DEVICE_TABLE (usb, bluepill_fb_table);
+static struct usb_driver bluepill_fb_driver = {
+    .name = "bluepill_fb",
+    .id_table = bluepill_fb_table,
+    .probe = bluepill_fb_probe,
+    .disconnect = bluepill_fb_disconnect,
+};
+
+
+
+
+
+
+static int __init bluepill_fb_init(void) {
+    return usb_register(&bluepill_fb_driver);
+}
+
+static void __exit bluepill_fb_exit(void) {
+    usb_deregister(&bluepill_fb_driver);
+}
+
+module_init(bluepill_fb_init);
+module_exit(bluepill_fb_exit);
+
+MODULE_LICENSE("GPL");
 
 
 
