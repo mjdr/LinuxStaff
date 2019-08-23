@@ -1,0 +1,270 @@
+//stm32+opencm3 firmware
+
+//main.c
+
+#include <libopencm3/stm32/rcc.h>
+#include <libopencm3/stm32/gpio.h>
+#include "usb.h"
+
+int main() {
+	rcc_clock_setup_in_hse_8mhz_out_72mhz();
+
+	usb_init();
+	usb_poll();
+
+}
+
+
+// usb.h
+#pragma once
+
+void usb_init();
+void usb_poll();
+
+//usb.c
+
+#include <libopencm3/stm32/rcc.h>
+#include <libopencm3/stm32/gpio.h>
+#include <libopencm3/usb/usbd.h>
+
+#include "usb.h"
+
+
+const static struct usb_device_descriptor dev = {
+	.bLength = USB_DT_DEVICE_SIZE,
+	.bDescriptorType = USB_DT_DEVICE,
+	.bcdUSB = 0x0200,
+	.bDeviceClass = USB_CLASS_VENDOR,
+	.bDeviceSubClass = 0,
+	.bDeviceProtocol = 0,
+	.bMaxPacketSize0 = 64,
+	.idVendor = 0xDEAD,
+	.idProduct = 0xBEAF,
+	.bcdDevice = 0x0200,
+	.iManufacturer = 1,
+	.iProduct = 2,
+	.iSerialNumber = 3,
+	.bNumConfigurations = 1,
+};
+
+const static struct usb_endpoint_descriptor data_endp[] = {{
+	.bLength = USB_DT_ENDPOINT_SIZE,
+	.bDescriptorType = USB_DT_ENDPOINT,
+	.bEndpointAddress = 0x01,
+	.bmAttributes = USB_ENDPOINT_ATTR_BULK,
+	.wMaxPacketSize = 64,
+	.bInterval = 1,
+}};
+
+const static struct usb_interface_descriptor iface = {
+	.bLength = USB_DT_INTERFACE_SIZE,
+	.bDescriptorType = USB_DT_INTERFACE,
+	.bInterfaceNumber = 0,
+	.bAlternateSetting = 0,
+	.bNumEndpoints = 1,
+	.bInterfaceClass = USB_CLASS_VENDOR,
+	.bInterfaceSubClass = 0,
+	.bInterfaceProtocol = 0,
+	.iInterface = 0,
+
+	.endpoint = data_endp,
+};
+
+const static struct usb_interface ifaces[] = {{
+	.num_altsetting = 1,
+	.altsetting = &iface,
+}};
+
+const static struct usb_config_descriptor config = {
+	.bLength = USB_DT_CONFIGURATION_SIZE,
+	.bDescriptorType = USB_DT_CONFIGURATION,
+	.wTotalLength = 0,
+	.bNumInterfaces = 1,
+	.bConfigurationValue = 1,
+	.iConfiguration = 0,
+	.bmAttributes = 0x80,
+	.bMaxPower = 0x32,
+
+	.interface = ifaces,
+};
+
+const static char *usb_strings[] = {
+	"Black Sphere Technologies",
+	"Simple Device",
+	"10101",
+};
+
+
+static usbd_device *usbd_dev;
+
+/* Buffer to be used for control requests. */
+static uint8_t usbd_control_buffer[128];
+
+static enum usbd_request_return_codes simple_control_callback(usbd_device *usbd_dev, struct usb_setup_data *req, uint8_t **buf,
+		uint16_t *len, void (**complete)(usbd_device *usbd_dev, struct usb_setup_data *req)) {
+	(void)buf;
+	(void)len;
+	(void)complete;
+	(void)usbd_dev;
+
+
+
+	return USBD_REQ_HANDLED;
+}
+
+
+static void data_rx_cb(usbd_device *usbd_dev, uint8_t ep) {
+	(void)ep;
+	(void)usbd_dev;
+
+	char buff[64];
+	int len = usbd_ep_read_packet(usbd_dev, 0x01, buff, 64);
+
+	if (len == 1) {
+		if(buff[0])
+			gpio_clear(GPIOC, GPIO13);
+		else
+			gpio_set(GPIOC, GPIO13);
+	}
+}
+static void usb_set_config_cb(usbd_device *usbd_dev, uint16_t wValue) {
+	(void)wValue;
+
+	usbd_ep_setup(usbd_dev, 0x01, USB_ENDPOINT_ATTR_BULK, 64, data_rx_cb);
+	usbd_register_control_callback(
+				usbd_dev,
+				USB_REQ_TYPE_VENDOR,
+				USB_REQ_TYPE_TYPE,
+				simple_control_callback);
+}
+
+void usb_init(void) {
+
+	rcc_periph_clock_enable(RCC_GPIOC);
+
+	/* LED output */
+	gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_50_MHZ,
+		      GPIO_CNF_OUTPUT_PUSHPULL, GPIO13);
+
+	usbd_dev = usbd_init(&st_usbfs_v1_usb_driver, &dev, &config, usb_strings, sizeof(usb_strings), usbd_control_buffer, sizeof(usbd_control_buffer));
+
+	usbd_register_set_config_callback(usbd_dev, usb_set_config_cb);
+
+}
+
+void usb_poll() {
+
+	while (1)
+		usbd_poll(usbd_dev);
+}
+
+
+
+// linux driver
+
+//my_led.c
+
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/slab.h>
+#include <linux/usb.h>
+#include <linux/leds.h>
+
+#define MIN(a,b) (((a) <= (b)) ? (a) : (b))
+
+struct bluepill_fb_led {
+	struct led_classdev cdev;
+	struct usb_device* usb_dev;
+};
+
+static int led_brightness_set(struct led_classdev* cdev, enum led_brightness brightness) {
+	struct bluepill_fb_led* led = container_of(cdev, struct bluepill_fb_led, cdev);
+	char bulk_buf;
+	int wrote_cnt;
+	int rv;
+	
+	
+	bulk_buf = brightness;
+	
+	rv = usb_bulk_msg(
+			led->usb_dev, 
+			usb_sndbulkpipe(led->usb_dev, 0x01),
+      &bulk_buf, 
+      MIN(1, 64), 
+      &wrote_cnt, 
+  		5000
+ 	);
+ 	
+ 	
+	
+	return rv;
+}
+
+static int bluepill_fb_probe(struct usb_interface *interface, const struct usb_device_id *id) {
+    struct usb_device* dev = interface_to_usbdev(interface);
+    struct bluepill_fb_led* led;
+    int rv;
+    
+    printk(KERN_INFO "bluepill_fb (%04X:%04X) plugged\n", id->idVendor, id->idProduct);
+    
+    led = kzalloc(sizeof(*led), GFP_KERNEL);
+    if (!led)
+			return -ENOMEM;
+    
+    led->cdev.name = "bluepill_fb:status:green";
+    led->cdev.max_brightness = 1;
+    led->cdev.brightness_set_blocking = led_brightness_set;
+    
+    led->usb_dev = dev;
+    
+    rv = devm_of_led_classdev_register(&dev->dev, NULL, &led->cdev);
+    if (rv)
+			return rv;
+		
+		
+		usb_set_intfdata(interface, led);
+		return 0;
+}
+
+static void bluepill_fb_disconnect(struct usb_interface *interface) {
+		struct bluepill_fb_led* led = usb_get_intfdata(interface);
+		
+    printk(KERN_INFO "bluepill_fb  removed\n");
+    
+    devm_led_classdev_unregister(&led->usb_dev->dev, &led->cdev);
+		usb_set_intfdata(interface, NULL);
+		
+    kfree(led);
+}
+
+static struct usb_device_id bluepill_fb_table[] =
+{
+    { USB_DEVICE(0xdead, 0xbeaf) },
+    {} /* Terminating entry */
+};
+
+
+MODULE_DEVICE_TABLE (usb, bluepill_fb_table);
+static struct usb_driver bluepill_fb_driver = {
+    .name = "bluepill_fb",
+    .id_table = bluepill_fb_table,
+    .probe = bluepill_fb_probe,
+    .disconnect = bluepill_fb_disconnect,
+};
+
+static int __init bluepill_fb_init(void) {
+    return usb_register(&bluepill_fb_driver);
+}
+
+static void __exit bluepill_fb_exit(void) {
+    usb_deregister(&bluepill_fb_driver);
+}
+
+module_init(bluepill_fb_init);
+module_exit(bluepill_fb_exit);
+
+MODULE_LICENSE("GPL");
+
+
+
+
