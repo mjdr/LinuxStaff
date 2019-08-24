@@ -1,9 +1,10 @@
-set login plugin
+sudo mysql_secure_install
+sudo mysql
 
 UPDATE mysql.user SET plugin = 'mysql_native_password', 
       Password = PASSWORD('NEWPASSWORD') WHERE User = 'root';
       
-ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'NEWPASSWORD';
+ALTER USER 'root'@'localhost' IDENTIFIED BY 'NEWPASSWORD';
 
 
 
